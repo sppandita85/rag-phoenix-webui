@@ -1,0 +1,39 @@
+# Core RAG System Dependencies
+fastapi==0.116.1
+uvicorn==0.27.1
+pydantic==2.5.0
+
+# Document Processing
+docling==2.46.0
+docling-core==2.45.0
+docling-parse==4.2.2
+
+# Vector Database
+asyncpg==0.30.0
+psycopg2-binary==2.9.9
+
+# LLM and Embeddings
+llama-index==0.13.2
+llama-index-core==0.13.2
+llama-index-embeddings-huggingface==0.6.0
+llama-index-vector-stores-postgres==0.6.3
+
+# RAG Evaluation and Monitoring
+ragas==0.3.2
+arize-phoenix==11.26.0
+arize-phoenix-client==1.15.3
+arize-phoenix-evals==0.28.1
+arize-phoenix-otel==0.13.0
+llama-index-callbacks-arize-phoenix==0.5.1
+
+# Web UI Integration
+open-webui==0.1.0
+
+# Utilities
+python-multipart==0.0.6
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Development and Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
