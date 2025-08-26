@@ -232,7 +232,7 @@ class RAGIntegration:
             logger.warning(f"⚠️ Failed to trace request to Phoenix: {e}")
     
     def trace_response(self, trace_id: str, question: str, answer: str, context: str, sources: list, 
-                      confidence: float, performance_metrics: dict, endpoint: str, user_id: str = None, session_id: str = None):
+                       confidence: float, performance_metrics: dict, endpoint: str, user_id: str = None, session_id: str = None):
         """Trace a RAG response to Phoenix for monitoring."""
         try:
             print(f"🔍 trace_response called with trace_id: {trace_id}")
@@ -240,6 +240,22 @@ class RAGIntegration:
                 print(f"⚠️ Phoenix not available in evaluator")
                 return
             print(f"✅ Phoenix is available, proceeding with response tracing")
+            
+            # Get RAGAs evaluation scores if available
+            ragas_scores = {}
+            try:
+                if hasattr(self.evaluator, 'is_ragas_available') and self.evaluator.is_ragas_available():
+                    from core.rag_engine.ragas_evaluator import ragas_evaluator
+                    evaluation_result = ragas_evaluator.evaluate_response(question, answer, context)
+                    if evaluation_result.get('success'):
+                        ragas_scores = evaluation_result.get('scores', {})
+                        print(f"✅ RAGAs evaluation completed: {ragas_scores}")
+                    else:
+                        print(f"⚠️ RAGAs evaluation failed: {evaluation_result.get('error', 'Unknown error')}")
+                else:
+                    print("⚠️ RAGAs evaluation not available")
+            except Exception as e:
+                print(f"⚠️ RAGAs evaluation error: {e}")
             
             # Import Phoenix components
             from phoenix.trace.schemas import Span, SpanContext, SpanKind, SpanStatusCode, SpanEvent
@@ -268,7 +284,8 @@ class RAGIntegration:
                         "sources_count": len(sources),
                         "confidence": confidence,
                         "response_time_ms": performance_metrics.get("response_time_ms", 0),
-                        "event_type": "rag_response_complete"
+                        "event_type": "rag_response_complete",
+                        **ragas_scores  # Include RAGAs evaluation scores
                     }
                 )
             ]
@@ -295,7 +312,8 @@ class RAGIntegration:
                 "query_length": performance_metrics.get("query_length", 0),
                 "response_length": performance_metrics.get("response_length", 0),
                 "total_tokens": performance_metrics.get("total_tokens", 0),
-                "event_type": "rag_response_complete"
+                "event_type": "rag_response_complete",
+                **ragas_scores  # Include RAGAs evaluation scores
             }
             
             # Create span

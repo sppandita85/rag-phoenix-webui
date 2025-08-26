@@ -22,79 +22,20 @@ logger = logging.getLogger(__name__)
 RAGAS_AVAILABLE = False
 PHOENIX_AVAILABLE = False
 
-# Try to import RAGAs with better error handling for uvicorn compatibility
+# Import the separate RAGAs evaluator to avoid uvloop conflicts
 try:
-    # Disable uvicorn's uvloop to prevent conflicts with RAGAs
-    os.environ["UVICORN_USE_UVLOOP"] = "0"
-    
-    import ragas
-    from ragas import evaluate
-
-    # Try to import Dataset - handle version differences
-    try:
-        from ragas import Dataset
-        RAGAS_DATASET_AVAILABLE = True
-    except ImportError:
-        try:
-            from datasets import Dataset
-            RAGAS_DATASET_AVAILABLE = True
-        except ImportError:
-            RAGAS_DATASET_AVAILABLE = False
-            logger.warning("⚠️ RAGAs Dataset not available")
-
-    # Try to import metrics - handle version differences
-    try:
-        from ragas.metrics import (
-            faithfulness,
-            answer_relevancy,
-            context_relevancy,
-            context_recall,
-            answer_correctness,
-            answer_similarity
-        )
-        RAGAS_METRICS = [
-            faithfulness,
-            answer_relevancy,
-            context_relevancy,
-            context_recall,
-            answer_correctness,
-            answer_similarity
-        ]
-    except ImportError:
-        # Fallback to basic metrics if specific ones aren't available
-        try:
-            from ragas.metrics import faithfulness, answer_relevancy
-            RAGAS_METRICS = [faithfulness, answer_relevancy]
-            logger.info("✅ RAGAs imported with basic metrics")
-        except ImportError:
-            RAGAS_METRICS = []
-            logger.warning("⚠️ RAGAs metrics not available")
-
-    # Try to configure metrics with custom Ollama LLM
-    try:
-        from core.rag_engine.ollama_llm_wrapper import OllamaLLMWrapper
-        
-        # Create custom Ollama LLM wrapper
-        ollama_llm = OllamaLLMWrapper("llama3.2")
-        logger.info("✅ Custom Ollama LLM wrapper created")
-        
-        # For now, use basic metrics without custom LLM to ensure they work
-        # We'll implement custom evaluation logic in the evaluate_rag_response method
-        logger.info("✅ Using basic RAGAs metrics with custom evaluation logic")
-        
-    except ImportError as e:
-        logger.warning(f"⚠️ Custom Ollama LLM wrapper not available: {e}")
-    except Exception as e:
-        logger.warning(f"⚠️ Could not configure custom Ollama LLM: {e}")
-
-    RAGAS_AVAILABLE = True
-    logger.info("✅ RAGAs imported successfully")
-
+    from core.rag_engine.ragas_evaluator import ragas_evaluator
+    RAGAS_AVAILABLE = ragas_evaluator.is_available()
+    if RAGAS_AVAILABLE:
+        print("✅ RAGAs evaluator imported successfully")
+        logger.info("✅ RAGAs evaluator imported successfully")
+    else:
+        print("⚠️ RAGAs evaluator not available")
+        logger.warning("⚠️ RAGAs evaluator not available")
 except ImportError as e:
-    logger.warning(f"⚠️ RAGAs not available: {e}")
-except Exception as e:
-    logger.warning(f"⚠️ RAGAs import failed due to compatibility issues: {e}")
-    # This handles the uvicorn loop conflict
+    print(f"❌ RAGAs evaluator import failed: {e}")
+    logger.warning(f"❌ RAGAs evaluator import failed: {e}")
+    RAGAS_AVAILABLE = False
 
 # Try to import Phoenix
 try:
@@ -543,7 +484,11 @@ Return only the number (e.g., 0.9):"""
 
     def is_ragas_available(self) -> bool:
         """Check if RAGAs is available."""
-        return RAGAS_AVAILABLE and len(RAGAS_METRICS) > 0
+        try:
+            from core.rag_engine.ragas_evaluator import ragas_evaluator
+            return ragas_evaluator.is_available()
+        except ImportError:
+            return False
 
 # Global evaluator instance
 rag_evaluator = RAGEvaluator()
