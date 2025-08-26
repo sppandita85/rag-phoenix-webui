@@ -59,6 +59,50 @@ app.add_middleware(
 # Global variables
 llama_model = None
 
+def _calculate_confidence_score(question: str, answer: str, response_time: float, performance_metrics: dict) -> float:
+    """Calculate dynamic confidence score based on response quality metrics."""
+    try:
+        # Base confidence starts at 0.7
+        confidence = 0.7
+        
+        # Question quality factor (0.0 to 0.1)
+        question_length = len(question.strip())
+        if question_length > 10:
+            confidence += 0.1
+        elif question_length > 5:
+            confidence += 0.05
+        
+        # Answer quality factor (0.0 to 0.1)
+        answer_length = len(answer.strip())
+        if answer_length > 100:
+            confidence += 0.1
+        elif answer_length > 50:
+            confidence += 0.05
+        
+        # Response time factor (0.0 to 0.05)
+        # Faster responses get slightly higher confidence
+        if response_time < 30:  # Under 30 seconds
+            confidence += 0.05
+        elif response_time < 60:  # Under 1 minute
+            confidence += 0.02
+        
+        # Token efficiency factor (0.0 to 0.05)
+        total_tokens = performance_metrics.get("total_tokens", 0)
+        if total_tokens > 0:
+            efficiency = answer_length / total_tokens
+            if efficiency > 2.0:  # Good token-to-character ratio
+                confidence += 0.05
+        
+        # Cap confidence at 0.95 (never 100% certain)
+        confidence = min(confidence, 0.95)
+        
+        # Round to 2 decimal places
+        return round(confidence, 2)
+        
+    except Exception as e:
+        print(f"⚠️ Error calculating confidence score: {e}")
+        return 0.75  # Fallback confidence
+
 def _ensure_llama_model():
     """Lazily initialize LlamaModel if not already initialized."""
     global llama_model
@@ -238,6 +282,46 @@ async def openai_chat_completions(request: OpenAIRequest):
                 print(f"✅ OpenAI-compatible response generated from documents")
                 print(f"📊 Performance: {response_time:.2f}s response time")
                 
+                # Trace the successful response to Phoenix
+                if RAG_EVALUATION_AVAILABLE:
+                    try:
+                        print(f"🔍 Attempting to trace response to Phoenix...")
+                        performance_metrics = {
+                            "response_time_ms": response_time * 1000,
+                            "query_length": len(user_message),
+                            "response_length": len(str(answer)),
+                            "total_tokens": len(user_message.split()) + len(str(answer).split())
+                        }
+                        
+                        print(f"📊 Performance metrics: {performance_metrics}")
+                        print(f"🔍 Calling trace_response with trace_id: {trace_id}")
+                        
+                        # Calculate dynamic confidence score based on response quality
+                        confidence_score = _calculate_confidence_score(
+                            question=user_message,
+                            answer=str(answer),
+                            response_time=response_time,
+                            performance_metrics=performance_metrics
+                        )
+                        
+                        rag_integration.trace_response(
+                            trace_id=trace_id,
+                            question=user_message,
+                            answer=str(answer),
+                            context="Context extracted from your ingested documents",
+                            sources=["Your PostgreSQL document database"],
+                            confidence=confidence_score,
+                            performance_metrics=performance_metrics,
+                            endpoint="/chat/completions",
+                            user_id="openai_user",
+                            session_id=trace_id
+                        )
+                        print(f"✅ Response tracing completed successfully")
+                    except Exception as trace_error:
+                        print(f"⚠️ Phoenix response tracing failed: {trace_error}")
+                        import traceback
+                        traceback.print_exc()
+                
                 return response
                 
             except Exception as e:
@@ -381,6 +465,32 @@ async def chat_endpoint(request: ChatRequest):
                 print(f"✅ Real RAG response generated from documents")
                 print(f"📊 Performance: {response_time:.2f}s response time")
                 
+                # Trace the successful response to Phoenix
+                if RAG_EVALUATION_AVAILABLE:
+                    try:
+                        # Calculate dynamic confidence score based on response quality
+                        confidence_score = _calculate_confidence_score(
+                            question=request.question,
+                            answer=str(answer),
+                            response_time=response_time,
+                            performance_metrics=performance_metrics
+                        )
+                        
+                        rag_integration.trace_response(
+                            trace_id=trace_id,
+                            question=request.question,
+                            answer=str(answer),
+                            context="Context extracted from your ingested documents",
+                            sources=["Your PostgreSQL document database"],
+                            confidence=confidence_score,
+                            performance_metrics=performance_metrics,
+                            endpoint="/chat",
+                            user_id=request.user_id,
+                            session_id=request.session_id
+                        )
+                    except Exception as trace_error:
+                        print(f"⚠️ Phoenix response tracing failed: {trace_error}")
+                
                 return response
                 
             except Exception as e:
@@ -466,15 +576,39 @@ async def evaluate_response(request: EvaluationRequest):
 
 @app.get("/models")
 async def get_models():
-    """Get available models information."""
+    """Get available models information in OpenAI-compatible format."""
     return {
-        "llm_model": "llama3.2" if llama_model else "fallback",
-        "embedding_model": "qllama/bge-large-en-v1.5" if llama_model else "none",
-        "vector_store": "PostgreSQL with pgvector" if llama_model else "none",
-        "status": "fully_loaded" if llama_model else "fallback_mode",
-        "rag_evaluation": "enabled" if RAG_EVALUATION_AVAILABLE else "disabled",
-        "phoenix_tracing": "enabled" if RAG_EVALUATION_AVAILABLE and rag_integration.evaluator.is_phoenix_available() else "disabled"
+        "object": "list",
+        "data": [
+            {
+                "id": "llama3.2-rag",
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "northbay-poc",
+                "permission": [],
+                "root": "llama3.2-rag",
+                "parent": None,
+                "context_length": 8192,
+                "model_type": "llm"
+            },
+            {
+                "id": "qllama-bge-large-en-v1.5",
+                "object": "model", 
+                "created": int(time.time()),
+                "owned_by": "northbay-poc",
+                "permission": [],
+                "root": "qllama-bge-large-en-v1.5",
+                "parent": None,
+                "context_length": 512,
+                "model_type": "embedding"
+            }
+        ]
     }
+
+@app.get("/v1/models")
+async def get_models_v1():
+    """OpenAI-compatible models endpoint."""
+    return await get_models()
 
 @app.get("/health")
 async def health_check():

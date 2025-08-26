@@ -183,7 +183,9 @@ class RAGIntegration:
                     attributes={
                         "trace_id": trace_id,
                         "endpoint": endpoint,
-                        "project": self.project_name
+                        "project": self.project_name,
+                        "question": question,
+                        "event_type": "rag_request_start"
                     }
                 )
             ]
@@ -196,8 +198,14 @@ class RAGIntegration:
                 "user_id": user_id,
                 "session_id": session_id,
                 "project": self.project_name,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "rag_status": "request_received",
+                "question_length": len(question),
+                "event_type": "rag_request_start"
             }
+            
+            # Note: Conversation object not available in this Phoenix version
+            conversation = None
             
             # Create span
             span = Span(
@@ -209,14 +217,9 @@ class RAGIntegration:
                 end_time=datetime.now(),
                 status_code=SpanStatusCode.OK,
                 status_message="Request received successfully",
-                attributes={
-                    "trace_id": trace_id,
-                    "endpoint": endpoint,
-                    "project": self.project_name,
-                    "event": "request_received"
-                },
+                attributes=attributes,
                 events=events,
-                conversation=None
+                conversation=conversation
             )
             
             # Create trace dataset and log to Phoenix
@@ -227,6 +230,102 @@ class RAGIntegration:
             
         except Exception as e:
             logger.warning(f"⚠️ Failed to trace request to Phoenix: {e}")
+    
+    def trace_response(self, trace_id: str, question: str, answer: str, context: str, sources: list, 
+                      confidence: float, performance_metrics: dict, endpoint: str, user_id: str = None, session_id: str = None):
+        """Trace a RAG response to Phoenix for monitoring."""
+        try:
+            print(f"🔍 trace_response called with trace_id: {trace_id}")
+            if not self.evaluator.is_phoenix_available():
+                print(f"⚠️ Phoenix not available in evaluator")
+                return
+            print(f"✅ Phoenix is available, proceeding with response tracing")
+            
+            # Import Phoenix components
+            from phoenix.trace.schemas import Span, SpanContext, SpanKind, SpanStatusCode, SpanEvent
+            from phoenix.trace import TraceDataset
+            from datetime import datetime
+            
+            # Create span context with proper span_id
+            span_id = str(uuid.uuid4())
+            context_obj = SpanContext(
+                trace_id=trace_id,
+                span_id=span_id
+            )
+            
+            # Create span events
+            events = [
+                SpanEvent(
+                    name="rag_response_generated",
+                    timestamp=datetime.now(),
+                    attributes={
+                        "trace_id": trace_id,
+                        "endpoint": endpoint,
+                        "project": self.project_name,
+                        "question": question,
+                        "answer_length": len(answer),
+                        "context_length": len(context),
+                        "sources_count": len(sources),
+                        "confidence": confidence,
+                        "response_time_ms": performance_metrics.get("response_time_ms", 0),
+                        "event_type": "rag_response_complete"
+                    }
+                )
+            ]
+            
+            # Create span attributes
+            attributes = {
+                "trace_id": trace_id,
+                "question": question,
+                "answer": answer,
+                "context": context,
+                "sources": str(sources),
+                "confidence": confidence,
+                "endpoint": endpoint,
+                "user_id": user_id,
+                "session_id": session_id,
+                "project": self.project_name,
+                "timestamp": datetime.now().isoformat(),
+                "rag_status": "response_generated",
+                "question_length": len(question),
+                "answer_length": len(answer),
+                "context_length": len(context),
+                "sources_count": len(sources),
+                "response_time_ms": performance_metrics.get("response_time_ms", 0),
+                "query_length": performance_metrics.get("query_length", 0),
+                "response_length": performance_metrics.get("response_length", 0),
+                "total_tokens": performance_metrics.get("total_tokens", 0),
+                "event_type": "rag_response_complete"
+            }
+            
+            # Create span
+            span = Span(
+                name=f"RAG Response - {endpoint}",
+                context=context_obj,
+                span_kind=SpanKind.UNKNOWN,
+                parent_id=None,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                status_code=SpanStatusCode.OK,
+                status_message="RAG response generated successfully",
+                attributes=attributes,
+                events=events,
+                conversation=None
+            )
+            
+            # Create trace dataset and log to Phoenix
+            trace_dataset = TraceDataset.from_spans([span])
+            print(f"🔍 Sending response trace to Phoenix with span: {span.name}")
+            self.evaluator.phoenix_client.log_traces(trace_dataset, project_name=self.project_name)
+            print(f"✅ Response trace sent to Phoenix successfully")
+            
+            logger.debug(f"✅ Response traced to Phoenix: {trace_id}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to trace response to Phoenix: {e}")
+            print(f"❌ Error in trace_response: {e}")
+            import traceback
+            traceback.print_exc()
     
     def trace_error(self, trace_id: str, error: str, error_type: str, endpoint: str):
         """Trace an error to Phoenix for monitoring."""
