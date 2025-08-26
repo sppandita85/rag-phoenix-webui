@@ -52,6 +52,36 @@ class ProjectManager:
         print("✅ Virtual environment is active")
         return True
     
+    def truncate_embeddings_table(self) -> bool:
+        """Truncate the embeddings table before processing."""
+        print("\n🔄 Preparing database...")
+        try:
+            import psycopg2
+            
+            # Connect to database
+            conn = psycopg2.connect(
+                host="localhost",
+                port=5432,
+                database="poc",
+                user="sppandita85",
+                password=""
+            )
+            cursor = conn.cursor()
+            
+            # Truncate the target table
+            print("🔄 Truncating data_cv_embeddings table to prevent duplicates...")
+            cursor.execute("TRUNCATE data_cv_embeddings RESTART IDENTITY CASCADE;")
+            conn.commit()
+            print("✅ Table truncated successfully")
+            
+            cursor.close()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"⚠️  Warning: Could not truncate table: {e}")
+            return False
+
     def process_documents(self) -> bool:
         """Process PDF documents: parse, chunk, embed, and load into vector store."""
         print("\n📚 Processing documents...")
@@ -247,6 +277,10 @@ class ProjectManager:
             if not self.check_prerequisites():
                 print("❌ Prerequisites not met. Exiting.")
                 return False
+            
+            # Truncate embeddings table
+            if not self.truncate_embeddings_table():
+                print("⚠️  Could not truncate embeddings table. Continuing anyway...")
             
             # Process documents
             if not self.process_documents():

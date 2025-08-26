@@ -22,38 +22,34 @@ class PDFParser:
     
     def __convertToMarkdown(self, doc):
         """
-        Converts docling document object to Markdown format.
+        Converts docling document object to Markdown format using native methods.
         
         :param doc: docling document object
         :return: Markdown formatted string
         """
         try:
-            # Convert document to Markdown
-            markdown_text = doc.to_markdown()
-            print(f"Document converted to Markdown format successfully")
-            return markdown_text
-        except AttributeError:
-            # Fallback: try to extract text if to_markdown() is not available
-            try:
-                if hasattr(doc, 'document') and hasattr(doc.document, 'text'):
-                    markdown_text = doc.document.text
-                    print(f"Markdown conversion not available, using plain text extraction")
-                    return markdown_text
-                else:
-                    # If no markdown conversion available, extract plain text
-                    print("Markdown conversion not available, using plain text extraction")
-                    if hasattr(doc, 'document') and hasattr(doc.document, 'text'):
-                        return doc.document.text
-                    elif hasattr(doc, 'text'):
-                        return doc.text
-                    else:
-                        return str(doc)
-            except Exception as e:
-                print(f"Error in fallback text extraction: {e}")
+            # Try to use docling's native markdown conversion first
+            if hasattr(doc, 'export_to_markdown'):
+                markdown_text = doc.export_to_markdown()
+                print(f"Document converted to Markdown using native docling export_to_markdown method")
+                return markdown_text
+            elif hasattr(doc, 'document') and hasattr(doc.document, 'export_to_markdown'):
+                markdown_text = doc.document.export_to_markdown()
+                print(f"Document converted to Markdown using document.export_to_markdown()")
+                return markdown_text
+            
+            # Fallback: try to extract text if markdown conversion is not available
+            print(f"Native markdown conversion not available, extracting text content")
+            if hasattr(doc, 'document') and hasattr(doc.document, 'text'):
+                return doc.document.text
+            elif hasattr(doc, 'text'):
+                return doc.text
+            else:
                 return str(doc)
+                
         except Exception as e:
-            print(f"Error converting to Markdown: {e}")
-            # Fallback to plain text
+            print(f"Error in markdown conversion: {e}")
+            # Fallback to plain text extraction
             try:
                 if hasattr(doc, 'document') and hasattr(doc.document, 'text'):
                     return doc.document.text
@@ -63,41 +59,6 @@ class PDFParser:
                     return str(doc)
             except:
                 return str(doc)
-    
-    def __text_to_markdown(self, text_content):
-        """
-        Converts plain text to basic markdown format.
-        
-        :param text_content: Plain text content
-        :return: Markdown formatted string
-        """
-        try:
-            # Basic markdown conversion
-            markdown_text = text_content
-            
-            # Convert bullet points
-            markdown_text = markdown_text.replace('●', '- ')
-            
-            # Convert line breaks to proper markdown
-            markdown_text = markdown_text.replace('\n\n', '\n\n')
-            
-            # Add headers for sections (basic heuristic)
-            lines = markdown_text.split('\n')
-            markdown_lines = []
-            
-            for line in lines:
-                line = line.strip()
-                if line and len(line) < 100 and line.isupper() and not line.startswith('-'):
-                    # Likely a header - make it markdown
-                    markdown_lines.append(f"## {line}")
-                else:
-                    markdown_lines.append(line)
-            
-            return '\n'.join(markdown_lines)
-            
-        except Exception as e:
-            print(f"Error in markdown conversion: {e}")
-            return text_content
     
     def __traverseChunks(self, chunks, length_of_chunks=100):
         list_of_chunks = []
@@ -131,18 +92,8 @@ class PDFParser:
             doc = self.converter.convert(file_path)
             print(f"Document converted. Converting to Markdown format...")
             
-            # Extract text content from docling document
-            if hasattr(doc, 'document') and hasattr(doc.document, 'text'):
-                text_content = doc.document.text
-            elif hasattr(doc, 'text'):
-                text_content = doc.text
-            else:
-                text_content = str(doc)
-            
-            print(f"Text extraction completed. Converting to markdown...")
-            
-            # Convert text to markdown format
-            markdown_content = self.__text_to_markdown(text_content)
+            # Convert document to markdown format using native docling methods
+            markdown_content = self.__convertToMarkdown(doc)
             print(f"Markdown conversion completed. Processing with chunker...")
             
             # Create a simple document object for chunking
